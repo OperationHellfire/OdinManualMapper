@@ -7,4 +7,5 @@ namespace OdinManualMapper
 {
 	BOOL ManualMap(HANDLE hProcess, BYTE* pSrcData);
 	BOOL VerifyPEFile(BYTE* pSrcData);
+	BOOL MapSections(HANDLE* pHandle, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS* ppNtHeaders);
 }

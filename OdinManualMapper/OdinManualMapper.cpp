@@ -33,6 +33,41 @@ BOOL OdinManualMapper::VerifyPEFile(BYTE* pSrcData)
 	
 }
 
+BOOL OdinManualMapper::MapSections(HANDLE* pHandle, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS* ppNtHeaders) {
+	if (pHandle == nullptr || ppNtHeaders == nullptr)
+		return false;
+	PIMAGE_NT_HEADERS pNtHeaders = *ppNtHeaders;
+	PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
+	HANDLE hProc = *pHandle;
+	WORD countSections = pNtHeaders->FileHeader.NumberOfSections;
+
+	for (int i = 0; i < countSections; i++) {
+
+		if (pSectionHeader->SizeOfRawData) {
+			printf("Mapping section: %s to RVA 0x%X\n", pSectionHeader->Name, pSectionHeader->VirtualAddress);
+			LPVOID targetAddress = pRemoteTargetBase + pSectionHeader->VirtualAddress;
+			LPCVOID buffer = pSrcData + pSectionHeader->PointerToRawData;
+			SIZE_T size = pSectionHeader->SizeOfRawData;
+			if (WriteProcessMemory(
+				hProc,
+				targetAddress,
+				buffer,
+				size,
+				NULL
+			)) {
+				printf("Successfully wrote section %d/%hu with size %zu with RVA 0x%X, VA 0x%X", i, countSections, size, pSectionHeader->VirtualAddress, (DWORD)targetAddress);
+			}
+			else {
+				printf("Error mapping section %d/%hu. Reverting changes.", i, countSections);
+				VirtualFreeEx(hProc, pRemoteTargetBase, 0, MEM_RELEASE);
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 
 	if(!VerifyPEFile(pSrcData))
@@ -67,31 +102,9 @@ BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 	}
 
 	//Starting mapping
-	PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
-	WORD countSections = pNtHeaders->FileHeader.NumberOfSections;
-
-	for (int i = 0; i < countSections; i++) {
-
-		if (pSectionHeader->SizeOfRawData) {
-			printf("Mapping section: %s to RVA 0x%X\n", pSectionHeader->Name, pSectionHeader->VirtualAddress);
-			LPVOID targetAddress = pRemoteTargetBase + pSectionHeader->VirtualAddress;
-			LPCVOID buffer = pSrcData + pSectionHeader->PointerToRawData;
-			SIZE_T size = pSectionHeader->SizeOfRawData;
-			if (WriteProcessMemory(
-				hProc,
-				targetAddress,
-				buffer,
-				size,
-				NULL
-				)) {
-				printf("Successfully wrote section %d/%hu with size %zu with RVA 0x%X, VA 0x%X", i, countSections, size, pSectionHeader->VirtualAddress, (DWORD)targetAddress);
-			}
-			else {
-				printf("Error mapping section %d/%hu. Reverting changes.", i, countSections);
-				VirtualFreeEx(hProc, pRemoteTargetBase, 0, MEM_RELEASE);
-				return false;
-			}
-		}
+	if(!OdinManualMapper::MapSections(&hProc,pRemoteTargetBase,pSrcData,&pNtHeaders)) {
+		printf("Error with MapSections! %d", GetLastError());
+		return false;
 	}
 
 }
