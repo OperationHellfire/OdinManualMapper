@@ -44,4 +44,54 @@ BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 	PIMAGE_NT_HEADERS pNtHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(pSrcData + reinterpret_cast<PIMAGE_DOS_HEADER>(pSrcData)->e_lfanew);
 	PIMAGE_OPTIONAL_HEADER pOptHeader = &pNtHeaders->OptionalHeader;
 	PIMAGE_FILE_HEADER pFileHeader = &pNtHeaders->FileHeader;
+
+	//Create a new section in the target process with the size of the image
+
+	BYTE* pRemoteTargetBase = reinterpret_cast<BYTE*>(
+		VirtualAllocEx(hProc, reinterpret_cast<LPVOID>(pOptHeader->ImageBase), pOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+		);
+
+	if (!pRemoteTargetBase) 
+	{
+		printf("Failed to allocate memory in target process. Trying System allocation. Error: %d\n", GetLastError());
+
+		pRemoteTargetBase = reinterpret_cast<BYTE*>(
+			VirtualAllocEx(hProc, NULL, pOptHeader->SizeOfImage, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+			);
+
+		if(!pRemoteTargetBase)
+		{
+			printf("Failed to allocate memory in target process. Error: %d\n", GetLastError());
+			return FALSE;
+		}
+	}
+
+	//Starting mapping
+	PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
+	WORD countSections = pNtHeaders->FileHeader.NumberOfSections;
+
+	for (int i = 0; i < countSections; i++) {
+
+		if (pSectionHeader->SizeOfRawData) {
+			printf("Mapping section: %s to RVA 0x%X\n", pSectionHeader->Name, pSectionHeader->VirtualAddress);
+			LPVOID targetAddress = pRemoteTargetBase + pSectionHeader->VirtualAddress;
+			LPCVOID buffer = pSrcData + pSectionHeader->PointerToRawData;
+			SIZE_T size = pSectionHeader->SizeOfRawData;
+			if (WriteProcessMemory(
+				hProc,
+				targetAddress,
+				buffer,
+				size,
+				NULL
+				)) {
+				printf("Successfully wrote section %d/%hu with size %zu with RVA 0x%X, VA 0x%X", i, countSections, size, pSectionHeader->VirtualAddress, (DWORD)targetAddress);
+			}
+			else {
+				printf("Error mapping section %d/%hu. Reverting changes.", i, countSections);
+				VirtualFreeEx(hProc, pRemoteTargetBase, 0, MEM_RELEASE);
+				return false;
+			}
+		}
+	}
+
 }
