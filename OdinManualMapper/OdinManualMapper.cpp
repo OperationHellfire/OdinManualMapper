@@ -33,12 +33,8 @@ BOOL OdinManualMapper::VerifyPEFile(BYTE* pSrcData)
 	
 }
 
-BOOL OdinManualMapper::MapSections(HANDLE* pHandle, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS* ppNtHeaders) {
-	if (pHandle == nullptr || ppNtHeaders == nullptr)
-		return false;
-	PIMAGE_NT_HEADERS pNtHeaders = *ppNtHeaders;
+BOOL OdinManualMapper::MapSections(HANDLE hProc, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS pNtHeaders) {
 	PIMAGE_SECTION_HEADER pSectionHeader = IMAGE_FIRST_SECTION(pNtHeaders);
-	HANDLE hProc = *pHandle;
 	WORD countSections = pNtHeaders->FileHeader.NumberOfSections;
 
 	for (int i = 0; i < countSections; i++) {
@@ -68,8 +64,26 @@ BOOL OdinManualMapper::MapSections(HANDLE* pHandle, BYTE* pRemoteTargetBase, BYT
 	return true;
 }
 
-BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
+BOOL OdinManualMapper::RelocateImage(BYTE* pRemoteTargetBase, PIMAGE_OPTIONAL_HEADER pOptHeader) {
+	ULONGLONG prefBase = pOptHeader->ImageBase;
+	ULONGLONG delta = (ULONGLONG)((ULONGLONG)pRemoteTargetBase - prefBase);
 
+	if (delta == 0) {
+		printf("Relocation skipped, image already at preferred base.");
+		return TRUE;
+	}
+	else {
+		IMAGE_DATA_DIRECTORY relocDir = pOptHeader->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+
+		if (relocDir.Size == 0 || relocDir.VirtualAddress == 0) {
+			printf("Relocation Directory is not initialized or can't be located. Aborting.");
+			return FALSE;
+		}
+
+	}
+}
+
+BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 	if(!VerifyPEFile(pSrcData))
 	{
 		printf("PE file verification failed.\n");
@@ -78,8 +92,10 @@ BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 
 	PIMAGE_NT_HEADERS pNtHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(pSrcData + reinterpret_cast<PIMAGE_DOS_HEADER>(pSrcData)->e_lfanew);
 	PIMAGE_OPTIONAL_HEADER pOptHeader = &pNtHeaders->OptionalHeader;
-	PIMAGE_FILE_HEADER pFileHeader = &pNtHeaders->FileHeader;
-
+		
+	InjectionData inj_track{};
+	inj_track.pSrcData = pSrcData;
+	inj_track.process = hProc;
 	//Create a new section in the target process with the size of the image
 
 	BYTE* pRemoteTargetBase = reinterpret_cast<BYTE*>(
@@ -100,11 +116,18 @@ BOOL OdinManualMapper::ManualMap(HANDLE hProc, BYTE* pSrcData) {
 			return FALSE;
 		}
 	}
+	inj_track.pRemoteTargetBase = pRemoteTargetBase; //What address is given to us by system
+	//Add PE headers to target process (REMOVE WHEN INJECTED)
+
+	if (!WriteProcessMemory(hProc, pRemoteTargetBase, pSrcData, pOptHeader->SizeOfHeaders, nullptr)) {
+		VirtualFreeEx(hProc, pRemoteTargetBase, 0, MEM_RELEASE);
+		return FALSE;
+	}
 
 	//Starting mapping
-	if(!OdinManualMapper::MapSections(&hProc,pRemoteTargetBase,pSrcData,&pNtHeaders)) {
+	if(!OdinManualMapper::MapSections(hProc,pRemoteTargetBase,pSrcData,pNtHeaders)) {
 		printf("Error with MapSections! %d", GetLastError());
-		return false;
+		return FALSE;
 	}
 
 }
