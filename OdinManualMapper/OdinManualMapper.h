@@ -39,7 +39,8 @@ namespace OdinManualMapper
 	BOOL ManualMap(HANDLE hProcess, BYTE* pSrcData);
 	BOOL VerifyPEFile(BYTE* pSrcData);
 	BOOL MapSections(HANDLE hProc, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS pNtHeaders);
-	BOOL RelocateImage(BYTE* pRemoteTargetBase, PIMAGE_OPTIONAL_HEADER pOptHeader);
+	BOOL RelocateImage(ShellCodeStructure* pStruct);
+	BOOL ResolveImports(ShellCodeStructure* pStruct);
 
 	void _stdcall Shellcode(ShellCodeStructure* pStruct);
 }
