@@ -29,18 +29,23 @@ namespace OdinManualMapper
 #ifdef _WIN64
 		f_RtlAddFunctionTable pRtlAddFunctionTable; // pointer to RtlAddFunctionTable function (WIN64 ONLY, NEED TO INSPECT FURTHER)
 #endif
+		f_DLL_ENTRY_POINT pDllEntry;
 		BYTE* pRemoteTargetBase; // Pointer to the base address of the injected module in the target process
-		DWORD pOptHeader_EntryPoint; // Might as well calculate this once and pass it to the shellcode, saves time
+		PIMAGE_NT_HEADERS pNtHeader;
+		PIMAGE_OPTIONAL_HEADER pOptHeader; //OptionalHeaders
 		LPVOID reserved; // dll reserved parameter for DllMain
 		DWORD reason; // ^ same as above, but for reason parameter
+		BOOL FINISHED;
 	};
 
 
 	BOOL ManualMap(HANDLE hProcess, BYTE* pSrcData);
 	BOOL VerifyPEFile(BYTE* pSrcData);
 	BOOL MapSections(HANDLE hProc, BYTE* pRemoteTargetBase, BYTE* pSrcData, PIMAGE_NT_HEADERS pNtHeaders);
-	BOOL RelocateImage(ShellCodeStructure* pStruct);
-	BOOL ResolveImports(ShellCodeStructure* pStruct);
+	BOOL __forceinline RelocateImage(ShellCodeStructure* pStruct);
+	BOOL __forceinline ResolveImports(ShellCodeStructure* pStruct);
+	BOOL __forceinline TLSCallback(ShellCodeStructure* pStruct);
+	BOOL __forceinline ResolveFunctionTable(ShellCodeStructure* pStruct);
 
 	void _stdcall Shellcode(ShellCodeStructure* pStruct);
 }
